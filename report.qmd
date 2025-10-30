@@ -8,27 +8,102 @@ format: typst
 ## **Part 0: libraries**
 
 ```{r}
+packages <- c("tidyverse", "sf", "tigris", "janitor", "scales")
+installed <- packages %in% rownames(installed.packages())
+if(any(!installed)) install.packages(packages[!installed])
 
+
+library(tidyverse)
+library(sf)
+library(tigris)
+library(janitor)
+library(scales)
+options(tigris_use_cache = TRUE)
 ```
+
 
 ## **Part 1:** **Defining Research Question**
 
-Chosen Question:
+Chosen Question: How has the share of renewable energy changed from 2021–2023 across U.S. states?
 
 ## **Part 2: Data Preparation and Cleaning**
 
 ```{r}
+en_renew21 <- read_csv('~/Documents/stat133/ev-power-shraddhakadaba/renew_use_2021.csv') |> clean_names()
+en_renew22 <- read_csv('~/Documents/stat133/ev-power-shraddhakadaba/renew_use_2022.csv') |> clean_names()
+en_renew23 <- read_csv('~/Documents/stat133/ev-power-shraddhakadaba/renew_use_2023.csv') |> clean_names()
 
+
+en_total21 <- read_csv('~/Documents/stat133/ev-power-shraddhakadaba/total_energy_use_2021.csv') |> clean_names()
+en_total22 <- read_csv('~/Documents/stat133/ev-power-shraddhakadaba/total_energy_use_2022.csv') |> clean_names()
+en_total23 <- read_csv('~/Documents/stat133/ev-power-shraddhakadaba/total_energy_use_2023.csv') |> clean_names()
+```
+
+```{r}
+en_renew21$year <- 2021
+en_renew22$year <- 2022
+en_renew23$year <- 2023
+
+
+en_total21$year <- 2021
+en_total22$year <- 2022
+en_total23$year <- 2023
+```
+
+```{r}
+renew_all <- bind_rows(en_renew21, en_renew22, en_renew23)
+total_all <- bind_rows(en_total21, en_total22, en_total23)
+
+renew_all <- renew_all |> mutate(state = str_to_title(str_trim(state)))
+total_all <- total_all |> mutate(state = str_to_title(str_trim(state)))
 ```
 
 ## **Part 3: Joining / Pivoting Datasets for Analysis**
 
 ```{r}
+energy <- left_join(renew_all, total_all, by = c('state','year'))
 
+energy <- energy |>
+mutate(pct_renew = 100 * (renew_use / total_use))
+
+head(energy)
+
+energy |> filter(year == 2023) |> arrange(desc(pct_renew)) |> head(5)
 ```
 
 ## **Part 4: Mapping Visualization**
 
 ```{r}
+states_sf <- states(cb = TRUE) |> st_transform(5070)
+keep_states <- c(state.name, 'District Of Columbia')
+states_sf <- states_sf |> filter(NAME %in% keep_states)
 
+map_df <- states_sf |>
+select(name = NAME, geometry) |>
+left_join(energy |> rename(name = state), by = 'name')
+
+
+# Plot of maps for 2021–2023
+ggplot(map_df) +
+geom_sf(aes(fill = pct_renew), color = 'white', size = 0.1) +
+facet_wrap(~year, nrow = 1) +
+scale_fill_viridis_c(option = 'plasma', labels = label_percent(scale = 1)) +
+labs(title = 'Share of Electricity from Renewables (2021–2023)',
+fill = '% Renewable') +
+theme_minimal()
 ```
+
+
+```{r}
+renew_change <- energy |>
+filter(year %in% c(2021, 2023)) |>
+select(state, year, pct_renew) |>
+pivot_wider(names_from = year, values_from = pct_renew) |>
+mutate(change = `2023` - `2021`) |>
+arrange(desc(change))
+
+
+head(renew_change, 10)
+```
+
+Analysis: I had trouble reading the csv files but wrote the code how I would if it worked. In the end, after cleaning and mutating the data, I compared the change from 2021 to 2023 to answer my original question of how the share of renewable energy has changed in the US states. Even though I wasn't able to visulize the graphs, I hypothesize that the share of renwable energy has increased from 2021 to 2023.
